@@ -105,6 +105,7 @@ namespace ArchiveOldFiles
         static int Error(string format, params object[] args)
         {
             Console.Error.WriteLine(format, args);
+            Console.ReadKey();
             return 1;
         }
     }
