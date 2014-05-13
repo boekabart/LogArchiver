@@ -14,6 +14,9 @@ namespace ArchiveOldFiles
             if (!Directory.Exists(dir))
                 return Error("Directory {0} does not exist", dir);
 
+            if (!Directory.Exists(Path.Combine(dir, "Archive")))
+                return Error("Directory {0}\\Archive does not exist - please create it and set its properties to 'compress'", dir);
+
             int days;
             if (!int.TryParse(args[1], out days))
                 return Error("Usage: ArchiveOldFiles <dir> <days>");
