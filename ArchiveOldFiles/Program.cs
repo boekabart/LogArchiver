@@ -1,11 +1,14 @@
 ﻿using System;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Management;
+using System.Security.Cryptography;
+using System.Threading;
 
 namespace ArchiveOldFiles
 {
-    class Program
+    internal class Program
     {
         private static int Main(string[] args)
         {
@@ -14,6 +17,8 @@ namespace ArchiveOldFiles
             var dir = args[0];
             if (!Directory.Exists(dir))
                 return Error("Directory {0} does not exist", dir);
+
+            System.Diagnostics.Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.BelowNormal;
 
             int days;
             if (!int.TryParse(args[1], out days))
@@ -30,8 +35,14 @@ namespace ArchiveOldFiles
                 return Error("Failed to create archive folder");
             }
 
-            TrySetCompression(archivePath);
+            Console.WriteLine("Setting compression attributes for archive folder {0} and subfolders", archivePath);
+            var di = new DirectoryInfo(archivePath);
+            TrySetCompressionOn(di);
+            foreach (var path in di.EnumerateDirectories("*.*", SearchOption.AllDirectories).Where(fi => !fi.IsCompressed()))
+                if (TrySetCompressionOn(path))
+                    Console.WriteLine("Compressed folder {0}", path.Name);
 
+            Console.WriteLine("Archiving old files");
             var delay = TimeSpan.FromDays(days);
             var now = DateTime.UtcNow.Date;
 
@@ -41,6 +52,10 @@ namespace ArchiveOldFiles
             foreach (var file in oldFiles)
                 MoveFileToArchive(file);
 
+            Console.WriteLine("Setting compression attributes for archive folder contents");
+            foreach (var path in di.EnumerateFiles("*.*", SearchOption.AllDirectories).Where(fi => !fi.IsCompressed()))
+                if (TrySetCompressionOn(path))
+                       Console.WriteLine("Compressed {0}", path.Name);
             return 0;
         }
 
@@ -58,28 +73,51 @@ namespace ArchiveOldFiles
             }
         }
 
-        private static void TrySetCompression(string destinationDir)
+        private static bool TrySetCompressionOn(DirectoryInfo directoryInfo)
         {
             try
             {
-                var directoryInfo = new DirectoryInfo(destinationDir);
                 if ((directoryInfo.Attributes & FileAttributes.Compressed) == FileAttributes.Compressed)
                 {
-                    Console.WriteLine("Archive folder already compressed");
-                    return;
+                    return true;
                 }
-                var destinationDirFixed = destinationDir.Replace(@"\", "/").TrimEnd('/');
+                var destinationDirFixed = directoryInfo.FullName.Replace(@"\", "/").TrimEnd('/');
                 var objPath = "Win32_Directory.Name=" + "\"" + destinationDirFixed + "\"";
                 using (var dirManagementObject = new ManagementObject(objPath))
                 {
                     var outParams = dirManagementObject.InvokeMethod("Compress", null, null);
                     var ret = (uint) (outParams.Properties["ReturnValue"].Value);
-                    Console.WriteLine("Tried to set compression on Archive folder, result code {0:X}", ret);
+                    return ret == 0;
                 }
             }
             catch (Exception e)
             {
                 Console.Error.WriteLine("Failed to set compression on Archive folder: {0}", e.Message);
+                return false;
+            }
+        }
+
+        private static bool TrySetCompressionOn(FileInfo fileInfo)
+        {
+            try
+            {
+                if (fileInfo.IsCompressed())
+                {
+                    return true;
+                }
+                var destinationDirFixed = fileInfo.FullName.Replace(@"\", "/").TrimEnd('/');
+                var objPath = "CIM_DataFile.Name=" + "\"" + destinationDirFixed + "\"";
+                using (var dataFileMgmtObject = new ManagementObject(objPath))
+                {
+                    var outParams = dataFileMgmtObject.InvokeMethod("Compress", null, null);
+                    var ret = (uint) (outParams.Properties["ReturnValue"].Value);
+                    return ret == 0;
+                }
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine("Failed to set compression on file: {0}", e.Message);
+                return false;
             }
         }
 
@@ -102,11 +140,23 @@ namespace ArchiveOldFiles
             }
         }
 
-        static int Error(string format, params object[] args)
+        private static int Error(string format, params object[] args)
         {
             Console.Error.WriteLine(format, args);
             Console.ReadKey();
             return 1;
+        }
+    }
+
+    public static class FileInfoExtensions
+    {
+        public static bool IsCompressed(this FileInfo fileInfo)
+        {
+            return (fileInfo.Attributes & FileAttributes.Compressed) == FileAttributes.Compressed;
+        }
+        public static bool IsCompressed(this DirectoryInfo dirInfo)
+        {
+            return (dirInfo.Attributes & FileAttributes.Compressed) == FileAttributes.Compressed;
         }
     }
 }
