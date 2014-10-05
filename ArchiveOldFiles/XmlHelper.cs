@@ -39,7 +39,11 @@ namespace ArchiveOldFiles
 
         public static void ToFile(T obj, string path)
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            var directoryName = Path.GetDirectoryName(path);
+            if (!string.IsNullOrWhiteSpace(directoryName))
+                if (!Directory.Exists(directoryName))
+                    Directory.CreateDirectory(directoryName);
+
             try
             {
 
