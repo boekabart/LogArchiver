@@ -7,8 +7,8 @@
     <ProjectGuid>{C907BDFF-BF30-417F-9343-84253F7465C8}</ProjectGuid>
     <OutputType>Exe</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>ArchiveOldFiles</RootNamespace>
-    <AssemblyName>ArchiveOldFiles</AssemblyName>
+    <RootNamespace>OldFileArchiver</RootNamespace>
+    <AssemblyName>OldFileArchiver</AssemblyName>
     <TargetFrameworkVersion>v4.5.1</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
@@ -46,6 +46,8 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Config.cs" />
+    <Compile Include="FileInfoExtensions.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="XmlHelper.cs" />

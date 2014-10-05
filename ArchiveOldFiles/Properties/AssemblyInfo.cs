@@ -1,16 +1,15 @@
 ﻿using System.Reflection;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 // General Information about an assembly is controlled through the following 
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
-[assembly: AssemblyTitle("ArchiveOldFiles")]
+[assembly: AssemblyTitle("OldFileArchiver")]
 [assembly: AssemblyDescription("")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("")]
-[assembly: AssemblyProduct("ArchiveOldFiles")]
-[assembly: AssemblyCopyright("Copyright ©  2014")]
+[assembly: AssemblyCompany("Glueware.nl")]
+[assembly: AssemblyProduct("OldFileArchiver")]
+[assembly: AssemblyCopyright("Copyright © 2014 Glueware.nl")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
 
@@ -33,5 +32,5 @@ using System.Runtime.InteropServices;
 // You can specify all the values or you can default the Build and Revision Numbers 
 // by using the '*' as shown below:
 // [assembly: AssemblyVersion("1.0.*")]
-[assembly: AssemblyVersion("1.0.2.1")]
-[assembly: AssemblyFileVersion("1.0.2.1")]
+[assembly: AssemblyVersion("1.0.2.2")]
+[assembly: AssemblyFileVersion("1.0.2.2")]

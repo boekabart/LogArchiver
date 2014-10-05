@@ -4,32 +4,10 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Management;
-using System.Reflection;
-using System.Xml.Serialization;
 using log4net.Config;
 
-namespace ArchiveOldFiles
+namespace OldFileArchiver
 {
-    [Serializable]
-    public class ConfigEntry
-    {
-        [XmlAttribute]
-        public string Directory { get; set; }
-        [XmlAttribute]
-        public string ArchiveDirectory { get; set; }
-        [XmlAttribute]
-        public int Days { get; set; }
-        [XmlAttribute]
-        public int DeleteDays { get; set; }
-    }
-
-    [Serializable]
-    public class Config
-    {
-        [XmlElement("Entry")]
-        public ConfigEntry[] Entries { get; set; }
-    }
-
     internal class Program
     {
         private static readonly log4net.ILog Log = log4net.LogManager.GetLogger("ArchiveLogFiles");
@@ -54,10 +32,10 @@ namespace ArchiveOldFiles
             if (config == null)
             {
                 if (args.Length < 2)
-                    return Error("Usage: ArchiveOldFiles <dir> <days>");
+                    return Error("Usage: OldFileArchiver [<dir> <days>]");
                 int days;
                 if (!Int32.TryParse(args[1], out days))
-                    return Error("Usage: ArchiveOldFiles <dir> <days>");
+                    return Error("Usage: OldFileArchiver [<dir> <days>]");
 
                 config = new Config
                 {
@@ -193,7 +171,7 @@ namespace ArchiveOldFiles
 
         private static void SaveConfigIfNotExists( Config config )
         {
-            const string configFile = @"ArchiveOldFiles.config";
+            const string configFile = @"Example_OldFileArchiver.config";
             try
             {
                 if (!File.Exists(configFile))
@@ -207,7 +185,7 @@ namespace ArchiveOldFiles
 
         private static Config TryLoadConfig()
         {
-            const string configFile = @"ArchiveOldFiles.config";
+            const string configFile = @"OldFileArchiver.config";
             try
             {
                 if (File.Exists(configFile))
@@ -217,7 +195,7 @@ namespace ArchiveOldFiles
             {
                 Log.ErrorFormat("Error reading config file {0}: {1}", configFile, exception);
             }
-            Log.ErrorFormat("No config file {0} - checking command line");
+            Log.ErrorFormat("No config file {0} - checking command line", configFile);
             return null;
         }
 
@@ -304,22 +282,11 @@ namespace ArchiveOldFiles
 
         private static int Error(string format, params object[] args)
         {
+            Console.Error.WriteLine(format, args);
             Log.ErrorFormat(format, args);
             if (!Console.IsErrorRedirected)
                 Console.ReadKey();
             return 1;
-        }
-    }
-
-    public static class FileInfoExtensions
-    {
-        public static bool IsCompressed(this FileInfo fileInfo)
-        {
-            return (fileInfo.Attributes & FileAttributes.Compressed) == FileAttributes.Compressed;
-        }
-        public static bool IsCompressed(this DirectoryInfo dirInfo)
-        {
-            return (dirInfo.Attributes & FileAttributes.Compressed) == FileAttributes.Compressed;
         }
     }
 }
