@@ -284,8 +284,6 @@ namespace OldFileArchiver
         {
             Console.Error.WriteLine(format, args);
             Log.ErrorFormat(format, args);
-            if (!Console.IsErrorRedirected)
-                Console.ReadKey();
             return 1;
         }
     }
