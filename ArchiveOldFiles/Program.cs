@@ -1,12 +1,12 @@
 ﻿using System;
-using System.CodeDom;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Management;
-using System.Security.Cryptography;
-using System.Threading;
+using System.Reflection;
 using System.Xml.Serialization;
+using log4net.Config;
 
 namespace ArchiveOldFiles
 {
@@ -19,6 +19,8 @@ namespace ArchiveOldFiles
         public string ArchiveDirectory { get; set; }
         [XmlAttribute]
         public int Days { get; set; }
+        [XmlAttribute]
+        public int DeleteDays { get; set; }
     }
 
     [Serializable]
@@ -30,15 +32,31 @@ namespace ArchiveOldFiles
 
     internal class Program
     {
+        private static readonly log4net.ILog Log = log4net.LogManager.GetLogger("ArchiveLogFiles");
+
+        private static void LoadLogConfiguration()
+        {
+            try
+            {
+                XmlConfigurator.ConfigureAndWatch(new FileInfo("log4net.config"));
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine("Failed to Configure and Watch log4net config log4net.config: {0}", e);
+            }
+        }
+
         private static int Main(string[] args)
         {
+            LoadLogConfiguration();
+
             var config = TryLoadConfig();
             if (config == null)
             {
                 if (args.Length < 2)
                     return Error("Usage: ArchiveOldFiles <dir> <days>");
                 int days;
-                if (!int.TryParse(args[1], out days))
+                if (!Int32.TryParse(args[1], out days))
                     return Error("Usage: ArchiveOldFiles <dir> <days>");
 
                 config = new Config
@@ -65,10 +83,10 @@ namespace ArchiveOldFiles
 
         private static int DoArchive(ConfigEntry entry)
         {
-            return DoArchive( entry.Directory, entry.ArchiveDirectory, entry.Days);
+            return DoArchive( entry.Directory, entry.ArchiveDirectory, entry.Days, entry.DeleteDays);
         }
 
-        private static int DoArchive ( string  dir, string archivePath, int days)
+        private static int DoArchive ( string  dir, string archivePath, int days, int deleteDays)
         {
             if (!Try(() =>
             {
@@ -79,28 +97,77 @@ namespace ArchiveOldFiles
                 return Error("Failed to create archive folder");
             }
 
-            Console.WriteLine("Setting compression attributes for archive folder {0} and subfolders", archivePath);
-            var di = new DirectoryInfo(archivePath);
-            TrySetCompressionOn(di);
-            foreach (var path in di.EnumerateDirectories("*.*", SearchOption.AllDirectories).Where(fi => !fi.IsCompressed()))
-                if (TrySetCompressionOn(path))
-                    Console.WriteLine("Compressed folder {0}", path.Name);
-
-            Console.WriteLine("Archiving old files");
-            var delay = TimeSpan.FromDays(days);
+            var archiveDirInfo = new DirectoryInfo(archivePath);
+            var dirInfo = new DirectoryInfo(dir);
             var now = DateTime.UtcNow.Date;
 
-            var dirInfo = new DirectoryInfo(dir);
+            if (deleteDays > 0)
+            {
+                Log.InfoFormat("Deleting old files");
+                var deleteDelay = TimeSpan.FromDays(deleteDays);
+                var threshold = now - deleteDelay;
+                var delFileInfos = dirInfo.EnumerateFiles("*.*").Where(fi=>fi.LastWriteTimeUtc < threshold);
+                foreach (var fifi in delFileInfos)
+                    TryDelete(fifi.FullName);
+
+                foreach (var didi in archiveDirInfo.EnumerateDirectories().Where(di => IsDateDirAndOlderThan(di, threshold) ))
+                    TryDeleteDirectoryFull(didi);
+            }
+
+
+            Log.InfoFormat("Setting compression attributes for archive folder {0} and subfolders", archivePath);
+            TrySetCompressionOn(archiveDirInfo);
+            foreach (var path in archiveDirInfo.EnumerateDirectories("*.*", SearchOption.AllDirectories).Where(fi => !fi.IsCompressed()))
+                if (TrySetCompressionOn(path))
+                    Log.InfoFormat("Compressed folder {0}", path.Name);
+
+            Log.InfoFormat("Archiving old files");
+            var delay = TimeSpan.FromDays(days);
+
             var fileInfos = dirInfo.EnumerateFiles();
             var oldFiles = fileInfos.Where(fi => (now - fi.LastWriteTimeUtc) > delay);
             foreach (var file in oldFiles)
                 MoveFileToArchive(file);
 
-            Console.WriteLine("Setting compression attributes for archive folder contents");
-            foreach (var path in di.EnumerateFiles("*.*", SearchOption.AllDirectories).Where(fi => !fi.IsCompressed()))
+            Log.InfoFormat("Setting compression attributes for archive folder contents");
+            foreach (var path in archiveDirInfo.EnumerateFiles("*.*", SearchOption.AllDirectories).Where(fi => !fi.IsCompressed()))
                 if (TrySetCompressionOn(path))
-                       Console.WriteLine("Compressed {0}", path.Name);
+                       Log.InfoFormat("Compressed {0}", path.Name);
             return 0;
+        }
+
+        private static bool IsDateDirAndOlderThan(DirectoryInfo di, DateTime threshold)
+        {
+            DateTime parsed;
+            if (!DateTime.TryParseExact(di.Name, "yyyy-MM-dd", null, DateTimeStyles.AssumeUniversal, out parsed))
+                return false;
+            return parsed < threshold;
+        }
+
+        private static void TryDeleteDirectoryFull(DirectoryInfo didi)
+        {
+            try
+            {
+                Log.InfoFormat("Deleting Directory {0}", didi.FullName);
+                didi.Delete(true);
+            }
+            catch (Exception e)
+            {
+                Log.ErrorFormat("Exception: {0}", e.Message);
+            }
+        }
+
+        private static void TryDelete(string fullName)
+        {
+            try
+            {
+                Log.InfoFormat("Deleting {0}", fullName);
+                File.Delete(fullName);
+            }
+            catch (Exception e)
+            {
+                Log.ErrorFormat("Exception: {0}", e.Message);
+            }
         }
 
         private static int CheckConfig(Config config)
@@ -113,11 +180,11 @@ namespace ArchiveOldFiles
 
         private static int CheckConfigEntry(ConfigEntry ce)
         {
-            if (string.IsNullOrWhiteSpace(ce.Directory)) return Error("No source directory set");
+            if (String.IsNullOrWhiteSpace(ce.Directory)) return Error("No source directory set");
             if (!Directory.Exists(ce.Directory))
                 return Error("Directory {0} does not exist", ce.Directory);
             if (ce.Days < 0) return Error("Negative # of days not supported");
-            if (string.IsNullOrWhiteSpace(ce.ArchiveDirectory))
+            if (String.IsNullOrWhiteSpace(ce.ArchiveDirectory))
                 ce.ArchiveDirectory = "Archive";
             if (!Path.IsPathRooted(ce.ArchiveDirectory))
                 ce.ArchiveDirectory = Path.Combine(ce.Directory, ce.ArchiveDirectory);
@@ -134,7 +201,7 @@ namespace ArchiveOldFiles
             }
             catch (Exception exception)
             {
-                Console.Error.WriteLine("Error writing config file {0}: {1}", configFile, exception);
+                Log.ErrorFormat("Error writing config file {0}: {1}", configFile, exception);
             }
         }
 
@@ -148,9 +215,9 @@ namespace ArchiveOldFiles
             }
             catch (Exception exception)
             {
-                Console.Error.WriteLine("Error reading config file {0}: {1}", configFile, exception);
+                Log.ErrorFormat("Error reading config file {0}: {1}", configFile, exception);
             }
-            Console.Error.WriteLine("No config file {0} - checking command line");
+            Log.ErrorFormat("No config file {0} - checking command line");
             return null;
         }
 
@@ -163,7 +230,7 @@ namespace ArchiveOldFiles
             }
             catch (Exception e)
             {
-                Console.Error.WriteLine("Exception: {0}", e.Message);
+                Log.ErrorFormat("Exception: {0}", e.Message);
                 return false;
             }
         }
@@ -187,7 +254,7 @@ namespace ArchiveOldFiles
             }
             catch (Exception e)
             {
-                Console.Error.WriteLine("Failed to set compression on Archive folder: {0}", e.Message);
+                Log.ErrorFormat("Failed to set compression on Archive folder: {0}", e.Message);
                 return false;
             }
         }
@@ -211,7 +278,7 @@ namespace ArchiveOldFiles
             }
             catch (Exception e)
             {
-                Console.Error.WriteLine("Failed to set compression on file: {0}", e.Message);
+                Log.ErrorFormat("Failed to set compression on file: {0}", e.Message);
                 return false;
             }
         }
@@ -219,7 +286,7 @@ namespace ArchiveOldFiles
         private static void MoveFileToArchive(FileInfo file)
         {
             var day = file.LastWriteTimeUtc.Date;
-            var subDir = string.Format(@"Archive\{0:yyyy-MM-dd}", day);
+            var subDir = String.Format(@"Archive\{0:yyyy-MM-dd}", day);
             var fullDir = Path.Combine(file.DirectoryName, subDir);
             var fullPath = Path.Combine(fullDir, file.Name);
             try
@@ -227,7 +294,7 @@ namespace ArchiveOldFiles
                 if (!Directory.Exists(fullDir))
                     Directory.CreateDirectory(fullDir);
                 File.Move(file.FullName, fullPath);
-                Console.WriteLine("Moved file {0} to {1}", file.Name, fullDir);
+                Log.InfoFormat("Moved file {0} to {1}", file.Name, fullDir);
             }
             catch (Exception e)
             {
@@ -237,7 +304,7 @@ namespace ArchiveOldFiles
 
         private static int Error(string format, params object[] args)
         {
-            Console.Error.WriteLine(format, args);
+            Log.ErrorFormat(format, args);
             if (!Console.IsErrorRedirected)
                 Console.ReadKey();
             return 1;
