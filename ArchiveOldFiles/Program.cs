@@ -1,31 +1,75 @@
 ﻿using System;
+using System.CodeDom;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Management;
 using System.Security.Cryptography;
 using System.Threading;
+using System.Xml.Serialization;
 
 namespace ArchiveOldFiles
 {
+    [Serializable]
+    public class ConfigEntry
+    {
+        [XmlAttribute]
+        public string Directory { get; set; }
+        [XmlAttribute]
+        public string ArchiveDirectory { get; set; }
+        [XmlAttribute]
+        public int Days { get; set; }
+    }
+
+    [Serializable]
+    public class Config
+    {
+        [XmlElement("Entry")]
+        public ConfigEntry[] Entries { get; set; }
+    }
+
     internal class Program
     {
         private static int Main(string[] args)
         {
-            if (args.Length < 2)
-                return Error("Usage: ArchiveOldFiles <dir> <days>");
-            var dir = args[0];
-            if (!Directory.Exists(dir))
-                return Error("Directory {0} does not exist", dir);
+            var config = TryLoadConfig();
+            if (config == null)
+            {
+                if (args.Length < 2)
+                    return Error("Usage: ArchiveOldFiles <dir> <days>");
+                int days;
+                if (!int.TryParse(args[1], out days))
+                    return Error("Usage: ArchiveOldFiles <dir> <days>");
 
-            System.Diagnostics.Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.BelowNormal;
+                config = new Config
+                {
+                    Entries = new[]
+                    {
+                        new ConfigEntry
+                        {
+                            Directory = args[0],
+                            Days = days
+                        }
+                    }
+                };
+                SaveConfigIfNotExists(config);
+            }
 
-            int days;
-            if (!int.TryParse(args[1], out days))
-                return Error("Usage: ArchiveOldFiles <dir> <days>");
+            Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.BelowNormal;
 
-            var archivePath = Path.Combine(dir, "Archive");
+            if (0 != CheckConfig(config))
+                return Error("Invalid configuration");
 
+            return config.Entries.Select(DoArchive).Sum();
+        }
+
+        private static int DoArchive(ConfigEntry entry)
+        {
+            return DoArchive( entry.Directory, entry.ArchiveDirectory, entry.Days);
+        }
+
+        private static int DoArchive ( string  dir, string archivePath, int days)
+        {
             if (!Try(() =>
             {
                 if (!Directory.Exists(archivePath))
@@ -57,6 +101,57 @@ namespace ArchiveOldFiles
                 if (TrySetCompressionOn(path))
                        Console.WriteLine("Compressed {0}", path.Name);
             return 0;
+        }
+
+        private static int CheckConfig(Config config)
+        {
+            if (config == null) return Error("No Configuration");
+            if (config.Entries == null) return Error("No Configuration Entries");
+            if (!config.Entries.Any()) return Error("No Configuration Entries");
+            return config.Entries.Select(CheckConfigEntry).Sum();
+        }
+
+        private static int CheckConfigEntry(ConfigEntry ce)
+        {
+            if (string.IsNullOrWhiteSpace(ce.Directory)) return Error("No source directory set");
+            if (!Directory.Exists(ce.Directory))
+                return Error("Directory {0} does not exist", ce.Directory);
+            if (ce.Days < 0) return Error("Negative # of days not supported");
+            if (string.IsNullOrWhiteSpace(ce.ArchiveDirectory))
+                ce.ArchiveDirectory = "Archive";
+            if (!Path.IsPathRooted(ce.ArchiveDirectory))
+                ce.ArchiveDirectory = Path.Combine(ce.Directory, ce.ArchiveDirectory);
+            return 0;
+        }
+
+        private static void SaveConfigIfNotExists( Config config )
+        {
+            const string configFile = @"ArchiveOldFiles.config";
+            try
+            {
+                if (!File.Exists(configFile))
+                    XmlHelper<Config>.ToFile(config, configFile);
+            }
+            catch (Exception exception)
+            {
+                Console.Error.WriteLine("Error writing config file {0}: {1}", configFile, exception);
+            }
+        }
+
+        private static Config TryLoadConfig()
+        {
+            const string configFile = @"ArchiveOldFiles.config";
+            try
+            {
+                if (File.Exists(configFile))
+                    return XmlHelper<Config>.FromFile(configFile);
+            }
+            catch (Exception exception)
+            {
+                Console.Error.WriteLine("Error reading config file {0}: {1}", configFile, exception);
+            }
+            Console.Error.WriteLine("No config file {0} - checking command line");
+            return null;
         }
 
         private static bool Try(Action action)
@@ -143,7 +238,8 @@ namespace ArchiveOldFiles
         private static int Error(string format, params object[] args)
         {
             Console.Error.WriteLine(format, args);
-            Console.ReadKey();
+            if (!Console.IsErrorRedirected)
+                Console.ReadKey();
             return 1;
         }
     }
