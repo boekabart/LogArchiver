@@ -105,7 +105,7 @@ namespace OldFileArchiver
             var fileInfos = dirInfo.EnumerateFiles();
             var oldFiles = fileInfos.Where(fi => (now - fi.LastWriteTimeUtc) > delay);
             foreach (var file in oldFiles)
-                MoveFileToArchive(file);
+                MoveFileToArchive(file, archiveDirInfo);
 
             Log.InfoFormat("Setting compression attributes for archive folder contents");
             foreach (var path in archiveDirInfo.EnumerateFiles("*.*", SearchOption.AllDirectories).Where(fi => !fi.IsCompressed()))
@@ -261,18 +261,28 @@ namespace OldFileArchiver
             }
         }
 
-        private static void MoveFileToArchive(FileInfo file)
+        private static void MoveFileToArchive(FileInfo file, DirectoryInfo archiveDir)
         {
             var day = file.LastWriteTimeUtc.Date;
-            var subDir = String.Format(@"Archive\{0:yyyy-MM-dd}", day);
-            var fullDir = Path.Combine(file.DirectoryName, subDir);
+            var fullDir = Path.Combine(archiveDir.FullName, String.Format(@"{0:yyyy-MM-dd}", day));
+            //var fullDir = Path.Combine(file.DirectoryName, subDir);
             var fullPath = Path.Combine(fullDir, file.Name);
             try
             {
                 if (!Directory.Exists(fullDir))
                     Directory.CreateDirectory(fullDir);
-                File.Move(file.FullName, fullPath);
-                Log.InfoFormat("Moved file {0} to {1}", file.Name, fullDir);
+                if (archiveDir.Root.FullName == file.Directory.Root.FullName)
+                {
+                    File.Move(file.FullName, fullPath);
+                    Log.InfoFormat("Moved file {0} to {1}", file.Name, fullDir);
+                }
+                else
+                {
+                    File.Copy(file.FullName, fullPath);
+                    Log.InfoFormat("Copied file {0} to {1}", file.Name, fullDir);
+                    file.Delete();
+                    Log.InfoFormat("Deleted file {0}", file.Name);
+                }
             }
             catch (Exception e)
             {
